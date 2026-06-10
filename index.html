@@ -186,12 +186,10 @@ nav { display: flex; align-items: center; justify-content: space-between; paddin
 
 <script>
 // ══════════════════════════════════════════════
-// CONFIGURACIÓN — pon tu API key de Gemini aquí
+// CONFIGURACIÓN — Worker URL (la API key vive
+// solo en el Worker, nunca en este HTML)
 // ══════════════════════════════════════════════
-const GEMINI_KEY = 'AQ.Ab8RN6I0LMW--Tksw2SGlGulk9c0yetS1V-GHEpzDtJwwNh_dQ';
-// Modelo con soporte google_search grounding
-const GEMINI_MODEL = 'gemini-2.0-flash';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
+const WORKER_URL = 'https://tiktok-analizerrenzotok.reninmol2001.workers.dev';
 
 // ══════════════════════════════════════════════
 // ESTADO
@@ -232,39 +230,44 @@ document.addEventListener('click', e => {
 });
 
 // ══════════════════════════════════════════════
-// GEMINI — llamada central con google_search
+// LLAMADA AL WORKER — proxy seguro para Gemini
+// El Worker recibe { prompt, useSearch } y
+// devuelve { text } con la respuesta de Gemini.
+// La API key nunca sale del Worker.
 // ══════════════════════════════════════════════
-async function gemini(prompt, useSearch) {
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
-  };
+async function callWorker(prompt, useSearch = true) {
+  // Cache-bust con timestamp para que cada llamada
+  // sea una petición fresca y no se sirva desde caché
+  const ts = Date.now();
 
-  // Formato correcto para google_search grounding en gemini-2.0-flash
-  if (useSearch) {
-    body.tools = [{ google_search: {} }];
-  }
-
-  const res = await fetch(GEMINI_URL, {
+  const res = await fetch(`${WORKER_URL}/api/generate?t=${ts}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify({ prompt, useSearch, ts })
   });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Worker error ${res.status}: ${err}`);
+  }
 
   const data = await res.json();
 
-  if (data.error) throw new Error(data.error.message || 'Error Gemini API');
+  // El Worker puede devolver { text } o { candidates } directamente
+  if (data.text) return data.text;
 
-  // Extrae todo el texto incluyendo partes con grounding
-  const text = (data.candidates?.[0]?.content?.parts || [])
-    .map(p => p.text || '')
-    .join('');
+  // Compatibilidad si el Worker reenvía la respuesta raw de Gemini
+  if (data.candidates) {
+    return (data.candidates?.[0]?.content?.parts || [])
+      .map(p => p.text || '')
+      .join('');
+  }
 
-  return text;
+  throw new Error('Respuesta inesperada del Worker: ' + JSON.stringify(data).slice(0, 200));
 }
 
 // ══════════════════════════════════════════════
-// PANTALLA 2 — CARGAR TEMAS REALES
+// PANTALLA 2 — CARGAR TEMAS EN TIEMPO REAL
 // ══════════════════════════════════════════════
 async function startTopics() {
   if (!niche) return;
@@ -276,10 +279,13 @@ async function startTopics() {
 }
 
 async function loadTopics() {
-  const today = new Date().toLocaleDateString('es-ES', { day:'numeric', month:'long', year:'numeric' });
+  // Fecha actual exacta para que Gemini no use datos cacheados
+  const today = new Date().toLocaleDateString('es-ES', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+  const isoDate = new Date().toISOString().split('T')[0]; // e.g. 2025-06-10
 
-  // Mostrar loader con pasos
-  document.getElementById('topics-sub').textContent = 'Conectando con Google Search...';
+  document.getElementById('topics-sub').textContent = 'Conectando con Google Search en tiempo real...';
   document.getElementById('topics-list').innerHTML = `
     <div class="loader">
       <div class="spinner"></div>
@@ -292,87 +298,55 @@ async function loadTopics() {
       </div>
     </div>`;
 
-  // Animar pasos visualmente
   setTimeout(() => {
-    document.getElementById('step1').className = 'step done';
-    document.getElementById('step1').textContent = '✓ Google Search conectado';
-    document.getElementById('step2').className = 'step active';
-    document.getElementById('step2').textContent = '⟳ Analizando resultados...';
+    const s1 = document.getElementById('step1');
+    const s2 = document.getElementById('step2');
+    if (s1) { s1.className = 'step done'; s1.textContent = '✓ Google Search conectado'; }
+    if (s2) { s2.className = 'step active'; s2.textContent = '⟳ Analizando resultados...'; }
   }, 1200);
   setTimeout(() => {
-    document.getElementById('step2').className = 'step done';
-    document.getElementById('step2').textContent = '✓ Resultados analizados';
-    document.getElementById('step3').className = 'step active';
-    document.getElementById('step3').textContent = '⟳ Seleccionando los más virales...';
+    const s2 = document.getElementById('step2');
+    const s3 = document.getElementById('step3');
+    if (s2) { s2.className = 'step done'; s2.textContent = '✓ Resultados analizados'; }
+    if (s3) { s3.className = 'step active'; s3.textContent = '⟳ Seleccionando los más virales...'; }
   }, 2400);
 
+  // Prompts con fecha exacta y petición explícita de datos NUEVOS
   const prompts = {
-    truecrime: `Busca en Google las noticias más recientes de True Crime de los ÚLTIMOS 7 DÍAS. Hoy es ${today}. Con base en los resultados reales de búsqueda encuentra los 5 casos o temas de True Crime más virales ahora mismo en redes sociales y TikTok: crímenes reales con nombres concretos, juicios activos, arrestos recientes, casos sin resolver con nuevas revelaciones. Usa SOLO información real y verificable de las búsquedas. Responde ÚNICAMENTE con este JSON exacto sin backticks ni texto adicional:
-{"topics":[{"rank":1,"title":"Título corto y específico","why":"2 oraciones con detalles reales y recientes de por qué es viral ahora","tags":["hot","trending"],"searchVolume":"Explosivo","source":"nombre del medio o caso real"},{"rank":2,"title":"...","why":"...","tags":["hot"],"searchVolume":"Muy Alto","source":"..."},{"rank":3,"title":"...","why":"...","tags":["trending"],"searchVolume":"Alto","source":"..."},{"rank":4,"title":"...","why":"...","tags":["viral"],"searchVolume":"Alto","source":"..."},{"rank":5,"title":"...","why":"...","tags":["trending"],"searchVolume":"Alto","source":"..."}]}`,
+    truecrime: `Hoy es ${today} (${isoDate}). Usa Google Search para buscar las noticias MÁS RECIENTES de True Crime de los ÚLTIMOS 7 DÍAS desde hoy. NO uses eventos anteriores a ${isoDate} salvo que tengan novedades activas esta semana. Necesito exactamente 5 casos o temas de True Crime que estén siendo tendencia AHORA MISMO en TikTok y redes sociales en español: crímenes reales con nombres concretos, juicios activos, arrestos recientes, casos sin resolver con nuevas revelaciones. Cada tema DEBE tener detalles específicos y verificables encontrados en las búsquedas (fechas, nombres, datos concretos). Responde ÚNICAMENTE con este JSON exacto sin backticks ni texto adicional:
+{"topics":[{"rank":1,"title":"Título corto y específico con nombres reales","why":"2 oraciones con detalles concretos y recientes de por qué es viral ESTA SEMANA, con fechas o datos verificables","tags":["hot","trending"],"searchVolume":"Explosivo","source":"nombre del medio o fuente real"},{"rank":2,"title":"...","why":"...","tags":["hot"],"searchVolume":"Muy Alto","source":"..."},{"rank":3,"title":"...","why":"...","tags":["trending"],"searchVolume":"Alto","source":"..."},{"rank":4,"title":"...","why":"...","tags":["viral"],"searchVolume":"Alto","source":"..."},{"rank":5,"title":"...","why":"...","tags":["trending"],"searchVolume":"Alto","source":"..."}]}`,
 
-    nba: `Busca en Google las noticias más recientes de NBA de los ÚLTIMOS 7 DÍAS. Hoy es ${today}. Con base en los resultados reales de búsqueda encuentra los 5 temas de NBA más virales ahora mismo en TikTok y redes sociales: partidos recientes con marcadores, resultados de playoffs, declaraciones polémicas de jugadores, estadísticas récord, lesiones, trades o drama confirmado. Usa SOLO información real y verificable de las búsquedas. Responde ÚNICAMENTE con este JSON exacto sin backticks ni texto adicional:
-{"topics":[{"rank":1,"title":"Título corto y específico","why":"2 oraciones con detalles reales y recientes de por qué es viral ahora","tags":["hot","viral"],"searchVolume":"Explosivo","source":"nombre del partido o fuente real"},{"rank":2,"title":"...","why":"...","tags":["hot"],"searchVolume":"Muy Alto","source":"..."},{"rank":3,"title":"...","why":"...","tags":["trending"],"searchVolume":"Muy Alto","source":"..."},{"rank":4,"title":"...","why":"...","tags":["hot"],"searchVolume":"Alto","source":"..."},{"rank":5,"title":"...","why":"...","tags":["trending","viral"],"searchVolume":"Alto","source":"..."}]}`
+    nba: `Hoy es ${today} (${isoDate}). Usa Google Search para buscar las noticias MÁS RECIENTES de NBA de los ÚLTIMOS 7 DÍAS desde hoy. NO uses eventos anteriores a ${isoDate} salvo que tengan novedades activas esta semana. Necesito exactamente 5 temas de NBA que estén siendo tendencia AHORA MISMO en TikTok y redes sociales en español: partidos recientes con marcadores reales, resultados de playoffs/finals, declaraciones polémicas de jugadores, estadísticas récord, lesiones, trades o drama confirmado ESTA SEMANA. Cada tema DEBE tener detalles específicos encontrados en las búsquedas (marcadores, fechas, nombres de jugadores). Responde ÚNICAMENTE con este JSON exacto sin backticks ni texto adicional:
+{"topics":[{"rank":1,"title":"Título corto y específico con nombres y datos reales","why":"2 oraciones con detalles concretos de por qué es viral ESTA SEMANA, con marcadores o fechas verificables","tags":["hot","viral"],"searchVolume":"Explosivo","source":"nombre del partido o fuente real"},{"rank":2,"title":"...","why":"...","tags":["hot"],"searchVolume":"Muy Alto","source":"..."},{"rank":3,"title":"...","why":"...","tags":["trending"],"searchVolume":"Muy Alto","source":"..."},{"rank":4,"title":"...","why":"...","tags":["hot"],"searchVolume":"Alto","source":"..."},{"rank":5,"title":"...","why":"...","tags":["trending","viral"],"searchVolume":"Alto","source":"..."}]}`
   };
 
   try {
-    // Llamada CON google_search grounding para datos reales
-    const raw = await gemini(prompts[niche], true);
+    const raw = await callWorker(prompts[niche], true);
     const clean = raw.replace(/```json|```/g, '').trim();
     const match = clean.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('Sin JSON en respuesta');
     const parsed = JSON.parse(match[0]);
     topics = parsed.topics || [];
-    if (topics.length === 0) throw new Error('Sin temas en respuesta');
+    if (topics.length === 0) throw new Error('Array de temas vacío');
 
-    document.getElementById('topics-sub').textContent = `✓ ${topics.length} temas reales encontrados — selecciona uno para crear tu guión`;
-    renderTopics(topics, false);
+    document.getElementById('topics-sub').textContent =
+      `✓ ${topics.length} temas en tiempo real — selecciona uno para crear tu guión`;
+    renderTopics(topics);
 
   } catch (err) {
-    console.warn('Google Search grounding falló, usando conocimiento base:', err.message);
-
-    // Intento 2: sin google_search pero con fecha actual para máxima precisión
-    try {
-      const raw2 = await gemini(prompts[niche], false);
-      const clean2 = raw2.replace(/```json|```/g, '').trim();
-      const match2 = clean2.match(/\{[\s\S]*\}/);
-      if (!match2) throw new Error('Sin JSON');
-      const parsed2 = JSON.parse(match2[0]);
-      topics = parsed2.topics || [];
-      if (topics.length === 0) throw new Error('Sin temas');
-
-      document.getElementById('topics-sub').textContent = `5 temas actualizados — selecciona uno para crear tu guión`;
-      renderTopics(topics, false);
-
-    } catch (err2) {
-      // Fallback garantizado
-      useFallback(err2.message);
-    }
+    console.error('Error al cargar temas:', err.message);
+    document.getElementById('topics-list').innerHTML = `
+      <div class="error-card">
+        <div style="font-size:28px;margin-bottom:12px;">⚠️</div>
+        <div style="color:var(--accent);font-weight:600;margin-bottom:8px;">No se pudieron cargar los temas</div>
+        <div style="color:var(--text3);font-size:12px;margin-bottom:20px;">${err.message}</div>
+        <button class="btn btn-red" style="margin:0 auto;display:flex;" onclick="loadTopics()">🔄 Reintentar</button>
+      </div>`;
+    document.getElementById('topics-sub').textContent = 'Error al conectar. Intenta de nuevo.';
   }
 }
 
-function useFallback(msg) {
-  const fb = {
-    truecrime: [
-      { rank:1, title:'P Diddy — nuevos testimonios impactantes en juicio 2025', why:'Testigos revelan detalles perturbadores en el juicio federal. El hashtag #PDiddy domina TikTok True Crime esta semana con millones de views.', tags:['hot','viral'], searchVolume:'Explosivo', source:'AP News / Billboard' },
-      { rank:2, title:'Bryan Kohberger — juicio por asesinato estudiantes Idaho', why:'El juicio está en pleno desarrollo con revelaciones que contradicen la versión inicial. Cada audiencia genera videos virales en TikTok.', tags:['hot','trending'], searchVolume:'Muy Alto', source:'NBC News' },
-      { rank:3, title:'Karen Read — segundo juicio, nuevo veredicto impactante', why:'El segundo juicio por el asesinato del oficial de policía mantiene al país dividido. TikTok explota con teorías sobre el encubrimiento.', tags:['trending'], searchVolume:'Alto', source:'Boston Globe' },
-      { rank:4, title:'Lori Vallow Daybell — apelación rechazada, caso cerrado', why:'La corte rechazó su apelación final. El caso de los hijos asesinados y la secta sigue generando documentales y contenido viral.', tags:['viral'], searchVolume:'Alto', source:'Idaho Statesman' },
-      { rank:5, title:'Rex Heuermann Gilgo Beach — nuevas víctimas identificadas', why:'El ADN forense identificó más víctimas del asesino serial de Long Island. La investigación sigue activa y genera contenido cada semana.', tags:['trending'], searchVolume:'Alto', source:'Newsday' }
-    ],
-    nba: [
-      { rank:1, title:'NBA Finals 2026 — Spurs vs Knicks, serie en curso', why:'Las Finales de la NBA están activas con Wembanyama de 22 años vs Brunson. El partido más buscado de la semana en todas las plataformas.', tags:['hot','viral'], searchVolume:'Explosivo', source:'ESPN / NBA.com' },
-      { rank:2, title:'Wembanyama WCF MVP — el más joven en la historia', why:'Wemby ganó el trofeo Magic Johnson tras eliminar a OKC en 7 partidos épicos. El debate sobre si ya es el mejor del mundo explota en TikTok.', tags:['hot','trending'], searchVolume:'Muy Alto', source:'NBA.com' },
-      { rank:3, title:'Jalen Brunson 31 pts por partido en Finales', why:'Los Knicks están en sus primeras Finales en décadas y Brunson es imparable. Nueva York está en euforia total y el contenido viral no para.', tags:['viral','trending'], searchVolume:'Muy Alto', source:'ESPN' },
-      { rank:4, title:'SGA eliminado — ¿falló el back-to-back MVP?', why:'OKC perdió el Game 7 en casa con SGA al 33% de efectividad. El debate sobre su legado en playoffs es el tema más comentado de la semana.', tags:['hot'], searchVolume:'Alto', source:'The Athletic' },
-      { rank:5, title:'Dylan Harper rookie en las Finales — fenómeno de 20 años', why:'Primer rookie en llegar a las Finales en su primera temporada en décadas. Su historia de éxito a los 20 años es contenido viral garantizado.', tags:['trending','viral'], searchVolume:'Alto', source:'ESPN / Sports Illustrated' }
-    ]
-  };
-  topics = fb[niche] || fb.nba;
-  document.getElementById('topics-sub').textContent = '5 temas verificados disponibles — selecciona uno para tu guión';
-  renderTopics(topics, true);
-}
-
-function renderTopics(data, isFallback) {
+function renderTopics(data) {
   const tagLabel = { hot:'🔥 Tendencia', trending:'📈 En alza', viral:'⚡ Viral' };
   const volClass = { 'Explosivo':'hot', 'Muy Alto':'trending', 'Alto':'viral' };
 
@@ -431,10 +405,10 @@ Responde ÚNICAMENTE con JSON válido sin backticks:
 {"hook":"Gancho de máx 25 palabras","script":"Guión completo mínimo 200 palabras","title":"Título SEO con emojis para TikTok","hashtags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10","tag11","tag12","tag13","tag14","tag15","tag16","tag17","tag18","tag19","tag20"],"duration":"80 segundos","wordCount":210}`;
 
   try {
-    const raw = await gemini(prompt, false);
+    const raw = await callWorker(prompt, false);
     const clean = raw.replace(/```json|```/g,'').trim();
     const match = clean.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('Sin JSON');
+    if (!match) throw new Error('Sin JSON en respuesta');
     renderScript(JSON.parse(match[0]), t);
   } catch (e) {
     document.getElementById('script-out').innerHTML = `
