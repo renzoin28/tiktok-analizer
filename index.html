@@ -564,7 +564,7 @@ let selectedNiche = null;
 let selectedNicheLabel = '';
 let selectedNicheIcon = '';
 let currentTopics = [];
- 
+ const WORKER_URL = 'https://tiktok-analizer.reninmol2001.workers.dev';
 function toggleDropdown() {
   const btn = document.getElementById('niche-btn');
   const dd = document.getElementById('niche-dropdown');
@@ -616,7 +616,6 @@ async function callGemini(prompt, useSearch = false) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
- const WORKER_URL = 'https://viral-generator-api1.reninmol2001.workers.dev';
   const data = await response.json();
   if (data.error) throw new Error(data.error.message);
   const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
@@ -625,6 +624,51 @@ async function callGemini(prompt, useSearch = false) {
  
 async function loadTopics() {
 
+  document.getElementById('topics-container').innerHTML = `
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <div class="loading-text">Buscando tendencias reales...</div>
+      <div class="loading-sub">Google Search + Gemini</div>
+    </div>
+  `;
+
+  try {
+
+    const response = await fetch(
+      WORKER_URL + '/trends?niche=' + selectedNiche
+    );
+
+    if (!response.ok) {
+      throw new Error('Error del Worker');
+    }
+
+    const data = await response.json();
+
+    if (!data.topics || !Array.isArray(data.topics)) {
+      throw new Error('No llegaron temas');
+    }
+
+    currentTopics = data.topics;
+
+    renderTopics(currentTopics);
+
+  } catch(error) {
+
+    console.error(error);
+
+    document.getElementById('topics-container').innerHTML = `
+      <div class="loading-card">
+        <div style="font-size:30px;">⚠️</div>
+        <div class="loading-text">
+          Error al cargar tendencias
+        </div>
+        <div class="loading-sub">
+          ${error.message}
+        </div>
+      </div>
+    `;
+  }
+}
   document.getElementById('topics-container').innerHTML = `
     <div class="loading-card">
       <div class="spinner"></div>
@@ -717,6 +761,68 @@ function renderTopics(topics) {
 }
  
 async function selectTopic(index) {
+
+  const topic = currentTopics[index];
+
+  document.getElementById('script-topic-title').textContent =
+    topic.title;
+
+  showScreen('script');
+
+  document.getElementById('script-container').innerHTML = `
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <div class="loading-text">
+        Generando guión viral...
+      </div>
+      <div class="loading-sub">
+        Analizando tema seleccionado
+      </div>
+    </div>
+  `;
+
+  try {
+
+    const response = await fetch(
+      WORKER_URL + '/script',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type':'application/json'
+        },
+        body: JSON.stringify({
+          niche: selectedNiche,
+          topic: topic.title,
+          context: topic.why
+        })
+      }
+    );
+
+    if(!response.ok){
+      throw new Error('Error del Worker');
+    }
+
+    const script = await response.json();
+
+    renderScript(script, topic);
+
+  } catch(error){
+
+    console.error(error);
+
+    document.getElementById('script-container').innerHTML = `
+      <div class="loading-card">
+        <div style="font-size:30px;">⚠️</div>
+        <div class="loading-text">
+          Error al generar el guión
+        </div>
+        <div class="loading-sub">
+          ${error.message}
+        </div>
+      </div>
+    `;
+  }
+}
   const topic = currentTopics[index];
   document.getElementById('script-topic-title').textContent = topic.title;
   showScreen('script');
