@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Generador de guiones Virales </title>
+<title>TikTok Viral Generator — IA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -477,7 +477,7 @@ nav {
 <nav>
   <div class="nav-logo">
     <div class="nav-logo-dot"></div>
-    RENZOTOK
+    Viral Generator
   </div>
   <span class="nav-badge" id="nav-status">Selecciona un nicho</span>
 </nav>
@@ -485,7 +485,7 @@ nav {
 <!-- SCREEN 1: NICHE -->
 <div class="screen active" id="screen-niche">
   <div class="niche-container">
-    <div class="niche-eyebrow"> Powered by RENZOTOK</div>
+    <div class="niche-eyebrow">✦ Powered by Gemini + Google Search</div>
     <h1 class="niche-title">Crea contenido<br><span>viral hoy</span></h1>
     <p class="niche-subtitle">Selecciona tu nicho y la IA analiza los temas más virales de los últimos 7 días para generarte el guión perfecto.</p>
  
@@ -604,50 +604,56 @@ function goToTopics() {
   loadTopics();
 }
  
+const GEMINI_API_KEY = 'AIzaSyChgknANMz4s1uZF2Bi3hn2nYVvS7fld5A';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+ 
+async function callGemini(prompt, useSearch = false) {
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+  };
+  if (useSearch) {
+    body.tools = [{ googleSearch: {} }];
+  }
+  const response = await fetch(GEMINI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+  const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+  return text;
+}
+ 
 async function loadTopics() {
   document.getElementById('topics-container').innerHTML = `
     <div class="loading-card">
       <div class="spinner"></div>
       <div class="loading-text">Buscando los temas más virales de esta semana...</div>
-      <div class="loading-sub">Analizando tendencias reales en tiempo real</div>
+      <div class="loading-sub">Analizando tendencias reales con Google Search en tiempo real</div>
     </div>
   `;
  
+  const today = new Date().toLocaleDateString('es-ES', {day:'numeric', month:'long', year:'numeric'});
   const nichePrompts = {
-    truecrime: `Eres un experto en contenido viral de TikTok especializado en True Crime. Hoy es ${new Date().toLocaleDateString('es-ES', {day:'numeric',month:'long',year:'numeric'})}. Dame los 5 temas de True Crime más virales y buscados en TikTok en los últimos 7 días. Deben ser casos REALES y VERIFICABLES — crímenes reales, juicios, arrestos, casos sin resolver, documentales recientes. NO inventes casos. Responde SOLO en JSON válido sin texto adicional ni backticks, con este formato exacto: {"topics":[{"rank":1,"title":"Título corto del tema","why":"Por qué es viral ahora mismo en 2 oraciones específicas con detalles reales","tags":["hot","trending"],"searchVolume":"Alto/Muy Alto/Explosivo"},{"rank":2,...}]}`,
-    nba: `Eres un experto en contenido viral de TikTok especializado en NBA y basketball. Hoy es ${new Date().toLocaleDateString('es-ES', {day:'numeric',month:'long',year:'numeric'})}. Dame los 5 temas de NBA más virales y buscados en TikTok en los últimos 7 días. Deben ser eventos REALES — partidos recientes, playoffs, declaraciones polémicas, estadísticas récord, lesiones, trades, drama entre jugadores. NO inventes eventos. Responde SOLO en JSON válido sin texto adicional ni backticks, con este formato exacto: {"topics":[{"rank":1,"title":"Título corto del tema","why":"Por qué es viral ahora mismo en 2 oraciones específicas con detalles reales","tags":["hot","trending"],"searchVolume":"Alto/Muy Alto/Explosivo"},{"rank":2,...}]}`
+    truecrime: `Eres un experto en contenido viral de TikTok especializado en True Crime. Usa Google Search para buscar noticias reales de los últimos 7 días. Hoy es ${today}. Encuentra los 5 casos o temas de True Crime más virales y buscados ahora mismo en redes sociales: crímenes reales, juicios activos, arrestos recientes, casos sin resolver con nuevas revelaciones. SOLO casos reales verificables. Responde ÚNICAMENTE con JSON válido sin backticks, sin texto adicional, exactamente así: {"topics":[{"rank":1,"title":"Título corto del tema","why":"Por qué es viral ahora mismo en 2 oraciones específicas con detalles reales recientes","tags":["hot","trending"],"searchVolume":"Explosivo"},{"rank":2,"title":"...","why":"...","tags":["hot"],"searchVolume":"Muy Alto"},{"rank":3,"title":"...","why":"...","tags":["trending"],"searchVolume":"Alto"},{"rank":4,"title":"...","why":"...","tags":["viral"],"searchVolume":"Alto"},{"rank":5,"title":"...","why":"...","tags":["trending"],"searchVolume":"Alto"}]}`,
+    nba: `Eres un experto en contenido viral de TikTok especializado en NBA y basketball. Usa Google Search para buscar noticias reales de los últimos 7 días. Hoy es ${today}. Encuentra los 5 temas de NBA más virales ahora mismo: partidos recientes, resultados de playoffs, declaraciones polémicas, estadísticas récord, lesiones importantes, trades o drama entre jugadores. SOLO eventos reales verificables. Responde ÚNICAMENTE con JSON válido sin backticks, sin texto adicional, exactamente así: {"topics":[{"rank":1,"title":"Título corto del tema","why":"Por qué es viral ahora mismo en 2 oraciones específicas con detalles reales recientes","tags":["hot","viral"],"searchVolume":"Explosivo"},{"rank":2,"title":"...","why":"...","tags":["hot"],"searchVolume":"Muy Alto"},{"rank":3,"title":"...","why":"...","tags":["trending"],"searchVolume":"Muy Alto"},{"rank":4,"title":"...","why":"...","tags":["hot"],"searchVolume":"Alto"},{"rank":5,"title":"...","why":"...","tags":["trending","viral"],"searchVolume":"Alto"}]}`
   };
  
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: nichePrompts[selectedNiche] }]
-      })
-    });
- 
-    const data = await response.json();
-    const textBlocks = data.content?.filter(b => b.type === 'text') || [];
-    const fullText = textBlocks.map(b => b.text).join('');
-    const clean = fullText.replace(/```json|```/g, '').trim();
- 
-    let parsed;
-    try {
-      const jsonMatch = clean.match(/\{[\s\S]*\}/);
-      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
-    } catch(e) {
-      throw new Error('JSON parse error');
-    }
- 
+    const rawText = await callGemini(nichePrompts[selectedNiche], true);
+    const clean = rawText.replace(/```json|```/g, '').trim();
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON found');
+    const parsed = JSON.parse(jsonMatch[0]);
     currentTopics = parsed.topics || [];
+    if (currentTopics.length === 0) throw new Error('Empty topics');
     renderTopics(currentTopics);
  
   } catch(e) {
-    document.getElementById('topics-subtitle').textContent = 'Usando temas de respaldo verificados';
+    document.getElementById('topics-subtitle').textContent = 'Error de conexión — usando temas de respaldo';
+    console.error('Gemini topics error:', e);
     const fallbacks = {
       truecrime: [
         { rank:1, title:'El caso Bryan Kohberger — juicio en vivo 2025', why:'El juicio por el asesinato de los 4 estudiantes de Idaho está en pleno desarrollo con nuevas revelaciones cada semana. Millones siguen el caso en tiempo real.', tags:['hot','viral'], searchVolume:'Explosivo' },
@@ -723,32 +729,15 @@ INSTRUCCIONES CRÍTICAS:
 - Incluir un momento de tensión o giro que mantenga la retención al 80%+
 - Terminar con una pregunta o CTA que genere comentarios
  
-Responde SOLO en JSON válido sin backticks ni texto adicional:
-{
-  "hook": "Las primeras 1-2 oraciones de gancho brutal (máx 25 palabras)",
-  "script": "El guión completo de principio a fin, natural y humano, mínimo 180 palabras",
-  "title": "Título SEO optimizado con emojis para TikTok",
-  "hashtags": ["hashtag1","hashtag2","hashtag3","hashtag4","hashtag5","hashtag6","hashtag7","hashtag8","hashtag9","hashtag10","hashtag11","hashtag12","hashtag13","hashtag14","hashtag15","hashtag16","hashtag17","hashtag18","hashtag19","hashtag20"],
-  "duration": "Duración estimada en segundos",
-  "wordCount": número de palabras del guión
-}`;
+Responde ÚNICAMENTE con JSON válido sin backticks ni texto adicional antes o después:
+{"hook":"Las primeras 1-2 oraciones de gancho brutal máx 25 palabras","script":"El guión completo de principio a fin natural y humano mínimo 180 palabras","title":"Título SEO optimizado con emojis para TikTok","hashtags":["hashtag1","hashtag2","hashtag3","hashtag4","hashtag5","hashtag6","hashtag7","hashtag8","hashtag9","hashtag10","hashtag11","hashtag12","hashtag13","hashtag14","hashtag15","hashtag16","hashtag17","hashtag18","hashtag19","hashtag20"],"duration":"75 segundos","wordCount":200}`;
  
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
- 
-    const data = await response.json();
-    const text = data.content?.map(b => b.text||'').join('') || '';
-    const clean = text.replace(/```json|```/g,'').trim();
+    const rawText = await callGemini(prompt, false);
+    const clean = rawText.replace(/```json|```/g, '').trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
-    const script = JSON.parse(jsonMatch ? jsonMatch[0] : clean);
+    if (!jsonMatch) throw new Error('No JSON in response');
+    const script = JSON.parse(jsonMatch[0]);
  
     renderScript(script, topic);
  
@@ -757,7 +746,7 @@ Responde SOLO en JSON válido sin backticks ni texto adicional:
       <div class="loading-card" style="background:rgba(226,75,74,0.06);border-color:rgba(226,75,74,0.2);">
         <div style="font-size:24px;margin-bottom:12px;">⚠️</div>
         <div class="loading-text" style="color:var(--accent);">Error al generar el guión</div>
-        <div class="loading-sub">Verifica tu conexión e intenta de nuevo</div>
+        <div class="loading-sub">Error: ${e.message} — verifica tu conexión</div>
         <button class="btn btn-accent" style="margin:16px auto 0;display:flex;" onclick="selectTopic(${index})">Reintentar</button>
       </div>
     `;
