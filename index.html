@@ -623,52 +623,6 @@ async function callGemini(prompt, useSearch = false) {
 }
  
 async function loadTopics() {
-
-  document.getElementById('topics-container').innerHTML = `
-    <div class="loading-card">
-      <div class="spinner"></div>
-      <div class="loading-text">Buscando tendencias reales...</div>
-      <div class="loading-sub">Google Search + Gemini</div>
-    </div>
-  `;
-
-  try {
-
-    const response = await fetch(
-      WORKER_URL + '/trends?niche=' + selectedNiche
-    );
-
-    if (!response.ok) {
-      throw new Error('Error del Worker');
-    }
-
-    const data = await response.json();
-
-    if (!data.topics || !Array.isArray(data.topics)) {
-      throw new Error('No llegaron temas');
-    }
-
-    currentTopics = data.topics;
-
-    renderTopics(currentTopics);
-
-  } catch(error) {
-
-    console.error(error);
-
-    document.getElementById('topics-container').innerHTML = `
-      <div class="loading-card">
-        <div style="font-size:30px;">⚠️</div>
-        <div class="loading-text">
-          Error al cargar tendencias
-        </div>
-        <div class="loading-sub">
-          ${error.message}
-        </div>
-      </div>
-    `;
-  }
-}
   document.getElementById('topics-container').innerHTML = `
     <div class="loading-card">
       <div class="spinner"></div>
@@ -823,10 +777,6 @@ async function selectTopic(index) {
     `;
   }
 }
-  const topic = currentTopics[index];
-  document.getElementById('script-topic-title').textContent = topic.title;
-  showScreen('script');
- 
   document.getElementById('script-container').innerHTML = `
     <div class="loading-card">
       <div class="spinner"></div>
@@ -834,7 +784,6 @@ async function selectTopic(index) {
       <div class="loading-sub">Generando hook, estructura, SEO y hashtags</div>
     </div>
   `;
- 
   const nicheContext = selectedNiche === 'truecrime'
     ? 'True Crime en TikTok para audiencia hispanohablante en USA'
     : 'NBA y basketball en TikTok para audiencia hispanohablante en USA';
