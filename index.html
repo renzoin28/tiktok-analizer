@@ -603,10 +603,6 @@ function goToTopics() {
   showScreen('topics');
   loadTopics();
 }
- 
-const GEMINI_API_KEY = 'AQ.Ab8RN6J_py3FvLGpavcobJIG0tXAXRw8Tx0tKGvcW_k1CvcqBA';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
- 
 async function callGemini(prompt, useSearch = false) {
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -620,6 +616,7 @@ async function callGemini(prompt, useSearch = false) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+ const WORKER_URL = 'https://viral-generator-api1.reninmol2001.workers.dev';
   const data = await response.json();
   if (data.error) throw new Error(data.error.message);
   const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
@@ -627,13 +624,57 @@ async function callGemini(prompt, useSearch = false) {
 }
  
 async function loadTopics() {
+
   document.getElementById('topics-container').innerHTML = `
     <div class="loading-card">
       <div class="spinner"></div>
-      <div class="loading-text">Buscando los temas más virales de esta semana...</div>
-      <div class="loading-sub">Analizando tendencias reales con Google Search en tiempo real</div>
+      <div class="loading-text">Buscando tendencias reales...</div>
+      <div class="loading-sub">Google News + Gemini Flash</div>
     </div>
   `;
+
+  try {
+
+    const response = await fetch(
+      WORKER_URL + '/trends?niche=' + selectedNiche
+    );
+
+    if (!response.ok) {
+      throw new Error('Worker Error');
+    }
+
+    const data = await response.json();
+
+    const text =
+      data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    const clean =
+      text.replace(/```json|```/g, '').trim();
+
+    const json =
+      JSON.parse(clean.match(/\{[\s\S]*\}/)[0]);
+
+    currentTopics = json.topics || [];
+
+    renderTopics(currentTopics);
+
+  } catch(error) {
+
+    document.getElementById('topics-container').innerHTML = `
+      <div class="loading-card">
+        <div style="font-size:26px">⚠️</div>
+        <div class="loading-text">
+          No se pudieron cargar tendencias reales
+        </div>
+        <div class="loading-sub">
+          ${error.message}
+        </div>
+      </div>
+    `;
+
+  }
+
+}
  
   const today = new Date().toLocaleDateString('es-ES', {day:'numeric', month:'long', year:'numeric'});
   const nichePrompts = {
@@ -642,7 +683,6 @@ async function loadTopics() {
   };
  
   try {
-    const rawText = await callGemini(nichePrompts[selectedNiche], true);
     const clean = rawText.replace(/```json|```/g, '').trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON found');
@@ -654,27 +694,6 @@ async function loadTopics() {
   } catch(e) {
     document.getElementById('topics-subtitle').textContent = 'Error de conexión — usando temas de respaldo';
     console.error('Gemini topics error:', e);
-    const fallbacks = {
-      truecrime: [
-        { rank:1, title:'El caso Bryan Kohberger — juicio en vivo 2025', why:'El juicio por el asesinato de los 4 estudiantes de Idaho está en pleno desarrollo con nuevas revelaciones cada semana. Millones siguen el caso en tiempo real.', tags:['hot','viral'], searchVolume:'Explosivo' },
-        { rank:2, title:'Lori Vallow — nuevos documentos del caso', why:'Nuevos documentos revelan detalles perturbadores sobre los motivos. Netflix tiene un documental activo que sigue generando búsquedas masivas.', tags:['trending','viral'], searchVolume:'Muy Alto' },
-        { rank:3, title:'El asesino del camino de Gilgo Beach — juicio Rex Heuermann', why:'Rex Heuermann sigue en juicio y cada audiencia genera contenido viral. El caso conecta con muchas víctimas sin identificar por años.', tags:['hot'], searchVolume:'Alto' },
-        { rank:4, title:'Karen Read — segundo juicio tras jurado colgado', why:'El segundo juicio por el asesinato de un policía genera debate masivo. Medio país cree que es culpable y el otro medio cree que la encubrieron.', tags:['trending','hot'], searchVolume:'Muy Alto' },
-        { rank:5, title:'P Diddy — detalles del juicio federal 2025', why:'El juicio federal contra Sean Combs con nuevas acusaciones y testimonios perturbadores sigue dominando el True Crime en TikTok.', tags:['viral','hot'], searchVolume:'Explosivo' }
-      ],
-      nba: [
-        { rank:1, title:'NBA Finals 2026 — Spurs vs Knicks Game 2 esta noche', why:'Las Finales de la NBA están en curso con Wembanyama buscando su primer campeonato. Los Knicks ganaron el Game 1 y la serie está al rojo vivo.', tags:['hot','viral'], searchVolume:'Explosivo' },
-        { rank:2, title:'Wembanyama MVP de las Finales del Oeste — análisis histórico', why:'Wemby ganó el trofeo Magic Johnson con 22 años tras eliminar a OKC en 7 partidos. El debate de si es ya el mejor del mundo explota en redes.', tags:['hot','trending'], searchVolume:'Muy Alto' },
-        { rank:3, title:'Jalen Brunson lidera a los Knicks a las Finales — historia de NYC', why:'Los Knicks están en las Finales por primera vez en décadas y Brunson promedia 31 puntos. Nueva York está en euforia total.', tags:['viral','trending'], searchVolume:'Muy Alto' },
-        { rank:4, title:'SGA eliminado — ¿falló el back-to-back MVP en los playoffs?', why:'Shai Gilgeous-Alexander fue eliminado con OKC tras un Game 7 en casa perdido. El debate sobre su legado en playoffs explota en TikTok.', tags:['hot'], searchVolume:'Alto' },
-        { rank:5, title:'Dylan Harper rookie en las Finales — el fenómeno de San Antonio', why:'El rookie de 20 años juega como veterano en las Finales. Su historia de llegar a las Finales en su primera temporada es contenido viral garantizado.', tags:['trending','viral'], searchVolume:'Alto' }
-      ]
-    };
-    currentTopics = fallbacks[selectedNiche];
-    renderTopics(currentTopics);
-  }
-}
- 
 function renderTopics(topics) {
   const tagClasses = { hot: 'hot', trending: 'trending', viral: 'viral' };
   const volumeColors = { 'Explosivo': 'hot', 'Muy Alto': 'trending', 'Alto': 'viral' };
@@ -733,7 +752,25 @@ Responde ÚNICAMENTE con JSON válido sin backticks ni texto adicional antes o d
 {"hook":"Las primeras 1-2 oraciones de gancho brutal máx 25 palabras","script":"El guión completo de principio a fin natural y humano mínimo 180 palabras","title":"Título SEO optimizado con emojis para TikTok","hashtags":["hashtag1","hashtag2","hashtag3","hashtag4","hashtag5","hashtag6","hashtag7","hashtag8","hashtag9","hashtag10","hashtag11","hashtag12","hashtag13","hashtag14","hashtag15","hashtag16","hashtag17","hashtag18","hashtag19","hashtag20"],"duration":"75 segundos","wordCount":200}`;
  
   try {
-    const rawText = await callGemini(prompt, false);
+   const response = await fetch(
+  WORKER_URL + '/script',
+  {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json'
+    },
+    body:JSON.stringify({
+      niche:selectedNiche,
+      topic:topic.title,
+      context:topic.why
+    })
+  }
+);
+
+const data = await response.json();
+
+const rawText =
+  data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const clean = rawText.replace(/```json|```/g, '').trim();
     const jsonMatch = clean.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON in response');
